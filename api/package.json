@@ -1,0 +1,20 @@
+{
+  "name": "devops_api",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node ./bin/www",
+    "test": "node --test",
+    "test:db": "node ../tests/system/database/integration.cjs"
+  },
+  "dependencies": {
+    "debug": "2.6.9",
+    "express": "4.22.3",
+    "pg": "8.23.1"
+  },
+  "engines": {
+    "node": "24.21.0",
+    "npm": "11.19.0"
+  },
+  "packageManager": "npm@11.19.0"
+}

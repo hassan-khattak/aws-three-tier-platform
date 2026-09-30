@@ -1,0 +1,13 @@
+# Only runtime files enter the build context; see COPY lines in Dockerfile.
+*
+!package.json
+!package-lock.json
+!.npmrc
+!app.js
+!bin/
+!lib/
+!scripts/
+!routes/
+!views/
+!public/
+!certs/

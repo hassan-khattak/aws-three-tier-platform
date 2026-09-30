@@ -1,0 +1,92 @@
+#!/usr/bin/env node
+
+/**
+ * Module dependencies.
+ */
+
+var app;
+try {
+  app = require('../app');
+} catch (error) {
+  const { ConfigurationError } = require('../lib/config');
+  const { log } = require('../lib/logger');
+  log({ level: 'error', event: 'startup_failed', code: 'CONFIGURATION_ERROR',
+    ...(error instanceof ConfigurationError ? { field: error.field } : {}) });
+  process.exit(1);
+}
+var debug = require('debug')('ldv:server');
+var http = require('http');
+var { createLifecycle } = require('../lib/lifecycle');
+var { log } = require('../lib/logger');
+
+/**
+ * Get port from environment and store in Express.
+ */
+
+var port = app.locals.config.port;
+app.set('port', port);
+
+/**
+ * Create HTTP server.
+ */
+
+var server = http.createServer(app);
+
+/**
+ * Listen on provided port, on all network interfaces, once the dependency
+ * check has passed. SIGTERM/SIGINT drain requests and exit within budget.
+ */
+
+var lifecycle = createLifecycle({
+  app: app,
+  server: server,
+  check: ({ signal }) => app.locals.database.readTime({ signal }),
+  close: () => app.locals.database.close(),
+  logger: log,
+});
+process.on('SIGTERM', function() { lifecycle.shutdown('SIGTERM'); });
+process.on('SIGINT', function() { lifecycle.shutdown('SIGINT'); });
+lifecycle.start(port);
+server.on('error', onError);
+server.on('listening', onListening);
+
+/**
+ * Event listener for HTTP server "error" event.
+ */
+
+function onError(error) {
+  if (error.syscall !== 'listen') {
+    throw error;
+  }
+
+  var bind = typeof port === 'string'
+    ? 'Pipe ' + port
+    : 'Port ' + port;
+
+  // handle specific listen errors with friendly messages
+  switch (error.code) {
+    case 'EACCES':
+      console.error(bind + ' requires elevated privileges');
+      process.exit(1);
+      break;
+    case 'EADDRINUSE':
+      console.error(bind + ' is already in use');
+      process.exit(1);
+      break;
+    default:
+      throw error;
+  }
+}
+
+/**
+ * Event listener for HTTP server "listening" event.
+ */
+
+function onListening() {
+  var addr = server.address();
+  var bind = typeof addr === 'string'
+    ? 'pipe ' + addr
+    : 'port ' + addr.port;
+  debug('Listening on ' + bind);
+  log({ level: 'info', event: 'server_listening' });
+}
