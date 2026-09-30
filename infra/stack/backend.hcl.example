@@ -1,0 +1,6 @@
+# Copy to backend.hcl (not committed) and set the bucket created by infra/bootstrap.
+bucket       = "three-tier-tfstate-<account-id>-us-east-1"
+key          = "stack/terraform.tfstate"
+region       = "us-east-1"
+encrypt      = true
+use_lockfile = true

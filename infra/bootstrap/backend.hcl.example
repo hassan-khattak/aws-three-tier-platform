@@ -1,0 +1,6 @@
+# Copy to backend.hcl (not committed) and set the bucket from `terraform output state_bucket`.
+bucket       = "three-tier-tfstate-<account-id>-us-east-1"
+key          = "bootstrap/terraform.tfstate"
+region       = "us-east-1"
+encrypt      = true
+use_lockfile = true

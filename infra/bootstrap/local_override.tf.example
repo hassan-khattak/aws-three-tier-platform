@@ -1,0 +1,5 @@
+# First bootstrap only: overrides the S3 backend with local state until the
+# bucket exists. Delete the copy after migrating (see backend.tf).
+terraform {
+  backend "local" {}
+}
