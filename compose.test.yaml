@@ -1,0 +1,88 @@
+# Disposable local fixture only. Never use these test credentials in AWS.
+services:
+  postgres:
+    image: postgres:16.15-bookworm@sha256:efedf3595f1d6f415c08568ba171029bf54052e754cc9f030e3f2412b21f3d67
+    environment:
+      POSTGRES_DB: assessment
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: local-admin-only
+    ports:
+      # Fixed per run so a stopped/started container keeps the same endpoint.
+      - "127.0.0.1:${TEST_DB_PORT:?Run the database integration script to choose a port}:5432"
+    volumes:
+      - pg-test-data:/var/lib/postgresql/data
+      - ${TEST_TLS_DIR:?Run the database integration script to generate test certificates}:/test-tls:ro
+      - ./tests/system/database/init.sql:/docker-entrypoint-initdb.d/01-app-role.sql:ro
+      - ./tests/system/database/pg_hba.conf:/test-hba.conf:ro
+    entrypoint:
+      - /bin/bash
+      - -ec
+      - |
+        install -o postgres -g postgres -m 0600 /test-tls/server.key /tmp/test-server.key
+        install -o postgres -g postgres -m 0644 /test-tls/server.crt /tmp/test-server.crt
+        exec /usr/local/bin/docker-entrypoint.sh postgres \
+          -c ssl=on \
+          -c ssl_cert_file=/tmp/test-server.crt \
+          -c ssl_key_file=/tmp/test-server.key \
+          -c hba_file=/test-hba.conf
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d assessment"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
+      start_period: 5s
+  # Production-shaped images, started only with --profile images.
+  # Sized like the planned Fargate tasks (0.25 vCPU / 512 MiB).
+  api:
+    profiles: [images]
+    image: assessment-api:local
+    build:
+      context: ./api
+      platforms: [linux/amd64]
+    platform: linux/amd64
+    read_only: true
+    cpus: 0.25
+    mem_limit: 512m
+    stop_grace_period: 30s
+    environment:
+      DB: assessment
+      DBUSER: assessment_app
+      DBPASS: local-test-only
+      DBHOST: postgres
+      DBPORT: "5432"
+      DB_SSL: "true"
+      DB_CA_FILE: /test-tls/ca.crt
+    volumes:
+      - ${TEST_TLS_DIR:?Run the database integration script to generate test certificates}/ca.crt:/test-tls/ca.crt:ro
+    ports:
+      - "127.0.0.1:${TEST_API_PORT:-}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck: &ready
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health/ready').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 2s
+      timeout: 6s
+      retries: 30
+      start_period: 5s
+  web:
+    profiles: [images]
+    image: assessment-web:local
+    build:
+      context: ./web
+      platforms: [linux/amd64]
+    platform: linux/amd64
+    read_only: true
+    cpus: 0.25
+    mem_limit: 512m
+    stop_grace_period: 30s
+    environment:
+      API_HOST: http://api:3000
+    ports:
+      - "127.0.0.1:${TEST_WEB_PORT:-}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck: *ready
+volumes:
+  pg-test-data:

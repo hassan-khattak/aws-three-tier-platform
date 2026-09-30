@@ -1,0 +1,76 @@
+{
+  "auditReportVersion": 2,
+  "vulnerabilities": {
+    "clean-css": {
+      "name": "clean-css",
+      "severity": "low",
+      "isDirect": false,
+      "via": [
+        {
+          "source": 1091669,
+          "name": "clean-css",
+          "dependency": "clean-css",
+          "title": "Regular Expression Denial of Service in clean-css",
+          "url": "https://github.com/advisories/GHSA-wxhq-pm8v-cw75",
+          "severity": "low",
+          "cwe": [
+            "CWE-1333"
+          ],
+          "cvss": {
+            "score": 0,
+            "vectorString": null
+          },
+          "range": "<4.1.11"
+        }
+      ],
+      "effects": [
+        "jade"
+      ],
+      "range": "<4.1.11",
+      "nodes": [
+        "node_modules/clean-css"
+      ],
+      "fixAvailable": {
+        "name": "jade",
+        "version": "1.9.2",
+        "isSemVerMajor": true
+      }
+    },
+    "jade": {
+      "name": "jade",
+      "severity": "low",
+      "isDirect": true,
+      "via": [
+        "clean-css"
+      ],
+      "effects": [],
+      "range": ">=1.10.0",
+      "nodes": [
+        "node_modules/jade"
+      ],
+      "fixAvailable": {
+        "name": "jade",
+        "version": "1.9.2",
+        "isSemVerMajor": true
+      }
+    }
+  },
+  "metadata": {
+    "vulnerabilities": {
+      "info": 0,
+      "low": 2,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 2
+    },
+    "dependencies": {
+      "prod": 123,
+      "dev": 0,
+      "optional": 1,
+      "peer": 0,
+      "peerOptional": 0,
+      "total": 123
+    }
+  }
+}
