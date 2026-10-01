@@ -1,0 +1,8 @@
+# Planned engine update (copy to upgrade.auto.tfvars for the procedure; not committed).
+# Step 1: restore green from blue (same version).
+db_generations = {
+  blue  = { engine_version = "16.14" }
+  green = { engine_version = "16.14", restore_from = "blue", apply_immediately = true }
+}
+# Step 2: engine_version = "16.15" on green. Step 3: active_db_generation = "green".
+# Step 4: remove blue (after the rollback window).

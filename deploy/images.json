@@ -1,0 +1,10 @@
+{
+  "web": {
+    "image": "123456789012.dkr.ecr.us-east-1.amazonaws.com/three-tier/web@sha256:41b37abf3bfe04608b5d54283e3be44acfe9630f68e35203e2b038cd51ba14ea",
+    "commit": "a8e636818db8"
+  },
+  "api": {
+    "image": "123456789012.dkr.ecr.us-east-1.amazonaws.com/three-tier/api@sha256:31d5fcd70ff0af7b186b982bfe399a10e4c2b96d4f6d745e5bc017bdc02a74a2",
+    "commit": "f1572e7c098b"
+  }
+}
