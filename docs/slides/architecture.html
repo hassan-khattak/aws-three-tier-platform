@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Three-tier Node application on AWS</title>
+<style>
+  @page { size: 13.333in 7.5in; margin: 0; }
+  :root { --ink: #1d2433; --muted: #5b6475; --line: #c9d1de; --accent: #1f6feb; --soft: #eef3fb; --ok: #1a7f37; --warn: #9a6700; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 18px/1.45 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: var(--ink); background: #fff; }
+  section { width: 13.333in; height: 7.5in; padding: 0.55in 0.75in; page-break-after: always; position: relative; overflow: hidden; }
+  section:last-child { page-break-after: auto; }
+  h1 { font-size: 40px; margin: 0 0 6px; letter-spacing: -0.5px; }
+  h2 { font-size: 30px; margin: 0 0 18px; color: var(--ink); }
+  .sub { color: var(--muted); font-size: 20px; margin: 0 0 24px; }
+  .foot { position: absolute; bottom: 0.3in; left: 0.75in; right: 0.75in; font-size: 13px; color: var(--muted); display: flex; justify-content: space-between; }
+  table { border-collapse: collapse; width: 100%; font-size: 17px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: var(--soft); font-weight: 600; }
+  ul { margin: 0; padding-left: 22px; } li { margin: 0 0 8px; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 36px; }
+  .big { font-size: 46px; font-weight: 700; color: var(--accent); line-height: 1; }
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin-top: 10px; }
+  .kpi { border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  .kpi .label { color: var(--muted); font-size: 15px; margin-top: 6px; }
+  .ok { color: var(--ok); font-weight: 600; } .warn { color: var(--warn); font-weight: 600; }
+  code { font: 15px Menlo, Consolas, monospace; background: var(--soft); padding: 1px 5px; border-radius: 4px; }
+  .title { display: flex; flex-direction: column; justify-content: center; height: 100%; }
+  .title h1 { font-size: 52px; }
+  svg text { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+</style>
+</head>
+<body>
+
+<section>
+  <div class="title">
+    <h1>Three-tier Node application on AWS</h1>
+    <p class="sub">Continuous delivery architecture: scalable, secure, measured</p>
+    <p>Hassan Khattak · DevOps portfolio project · October 2026</p>
+    <p style="margin-top:28px">Deployed on AWS us-east-1, since torn down</p>
+  </div>
+</section>
+
+<section>
+  <h2>Architecture</h2>
+  <svg viewBox="0 0 1180 520" width="100%" height="5.6in" role="img" aria-label="Architecture diagram">
+    <defs>
+      <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#5b6475"/></marker>
+    </defs>
+    <!-- user and edge -->
+    <rect x="10" y="215" width="120" height="60" rx="30" fill="#fff" stroke="#5b6475"/>
+    <text x="70" y="250" text-anchor="middle" font-size="16">Browser</text>
+    <rect x="175" y="190" width="170" height="110" rx="10" fill="#eef3fb" stroke="#1f6feb"/>
+    <text x="260" y="222" text-anchor="middle" font-size="17" font-weight="600">CloudFront</text>
+    <text x="260" y="246" text-anchor="middle" font-size="13">HTTPS · edge locations</text>
+    <text x="260" y="266" text-anchor="middle" font-size="13">CSS/images cached 5 min</text>
+    <text x="260" y="286" text-anchor="middle" font-size="13">HTML/API never cached</text>
+    <line x1="130" y1="245" x2="173" y2="245" stroke="#5b6475" marker-end="url(#a)"/>
+    <!-- VPC -->
+    <rect x="385" y="20" width="785" height="480" rx="12" fill="none" stroke="#5b6475" stroke-dasharray="6 5"/>
+    <text x="400" y="45" font-size="15" fill="#5b6475">VPC 10.42.0.0/16 · us-east-1 · two Availability Zones (use1-az1, use1-az2)</text>
+    <!-- private subnets band -->
+    <rect x="405" y="60" width="745" height="120" rx="8" fill="#f6f8fb" stroke="#c9d1de"/>
+    <text x="420" y="82" font-size="14" fill="#5b6475">Private subnets: no internet route</text>
+    <rect x="430" y="95" width="200" height="70" rx="8" fill="#fff" stroke="#1f6feb"/>
+    <text x="530" y="125" text-anchor="middle" font-size="16" font-weight="600">Internal ALB</text>
+    <text x="530" y="146" text-anchor="middle" font-size="13">/api* → API · else → web</text>
+    <rect x="860" y="95" width="270" height="70" rx="8" fill="#fff" stroke="#1a7f37"/>
+    <text x="995" y="120" text-anchor="middle" font-size="16" font-weight="600">RDS PostgreSQL 16 Multi-AZ</text>
+    <text x="995" y="141" text-anchor="middle" font-size="13">primary + standby · encrypted · TLS only</text>
+    <text x="995" y="158" text-anchor="middle" font-size="13">daily backups · point-in-time recovery</text>
+    <!-- public subnets band -->
+    <rect x="405" y="210" width="745" height="170" rx="8" fill="#f6f8fb" stroke="#c9d1de"/>
+    <text x="420" y="232" font-size="14" fill="#5b6475">Public subnets: inbound from ALB only</text>
+    <rect x="430" y="250" width="200" height="110" rx="8" fill="#fff" stroke="#5b6475"/>
+    <text x="530" y="278" text-anchor="middle" font-size="16" font-weight="600">Web service</text>
+    <text x="530" y="300" text-anchor="middle" font-size="13">ECS Fargate · 2 tasks</text>
+    <text x="530" y="318" text-anchor="middle" font-size="13">one per AZ</text>
+    <text x="530" y="340" text-anchor="middle" font-size="13">server-side render</text>
+    <rect x="660" y="250" width="200" height="110" rx="8" fill="#fff" stroke="#5b6475"/>
+    <text x="760" y="278" text-anchor="middle" font-size="16" font-weight="600">API service</text>
+    <text x="760" y="300" text-anchor="middle" font-size="13">ECS Fargate · 2 tasks</text>
+    <text x="760" y="318" text-anchor="middle" font-size="13">one per AZ</text>
+    <text x="760" y="340" text-anchor="middle" font-size="13">pool of 5 · 3 s budget</text>
+    <!-- arrows -->
+    <path d="M345,230 C370,200 400,140 428,130" fill="none" stroke="#5b6475" marker-end="url(#a)"/>
+    <text x="300" y="168" font-size="12" fill="#5b6475">VPC origin</text>
+    <line x1="510" y1="165" x2="510" y2="248" stroke="#5b6475" marker-end="url(#a)"/>
+    <line x1="600" y1="165" x2="720" y2="248" stroke="#5b6475" marker-end="url(#a)"/>
+    <path d="M560,250 C565,215 560,190 560,167" fill="none" stroke="#9a6700" stroke-dasharray="4 3" marker-end="url(#a)"/>
+    <text x="566" y="205" font-size="12" fill="#9a6700">GET /api/status</text>
+    <line x1="840" y1="250" x2="930" y2="167" stroke="#1a7f37" marker-end="url(#a)"/>
+    <text x="890" y="230" font-size="12" fill="#1a7f37">TLS 5432 (CA + hostname verified)</text>
+    <!-- observability -->
+    <rect x="430" y="395" width="420" height="90" rx="8" fill="#fff" stroke="#c9d1de"/>
+    <text x="640" y="422" text-anchor="middle" font-size="15" font-weight="600">Observability</text>
+    <text x="640" y="445" text-anchor="middle" font-size="13">CloudWatch Logs (web, API, RDS, CloudFront) · ALB logs in S3</text>
+    <text x="640" y="465" text-anchor="middle" font-size="13">Dashboard · 5 alarms → SNS · saved Logs Insights queries</text>
+    <rect x="880" y="395" width="250" height="90" rx="8" fill="#fff" stroke="#c9d1de"/>
+    <text x="1005" y="422" text-anchor="middle" font-size="15" font-weight="600">Delivery and state</text>
+    <text x="1005" y="445" text-anchor="middle" font-size="13">ECR (immutable) · Secrets Manager</text>
+    <text x="1005" y="465" text-anchor="middle" font-size="13">Terraform state: S3, locked, backed up</text>
+  </svg>
+  <div class="foot"><span>All resources defined in Terraform (infra/)</span><span>2 / 9</span></div>
+</section>
+
+<section>
+  <h2>Requirements → solution</h2>
+  <table>
+    <tr><th>Requirement</th><th>Solution</th><th>Evidence</th></tr>
+    <tr><td>Web and API public, DB private</td><td>CloudFront only public entry; internal ALB; private RDS</td><td>Tasks, ALB and DB unreachable from the internet (tested)</td></tr>
+    <tr><td>Everything as code</td><td>Terraform with S3 state and locking</td><td>Repeat plans clean, in CI too</td></tr>
+    <tr><td>Instance failures</td><td>2 tasks/service across 2 AZs; RDS Multi-AZ</td><td>Task loss: 0 failures; DB failover ~17 s</td></tr>
+    <tr><td>Updates without downtime</td><td>Rolling releases; parallel-generation DB upgrade</td><td>Releases and DB upgrade: 0 failures</td></tr>
+    <tr><td>Automated deployment + tests</td><td>GitLab CI: tests → plan → build → release</td><td>53 unit tests gate the release</td></tr>
+    <tr><td>Daily backups</td><td>RDS automated + PITR; AWS Backup for state</td><td>Scheduled snapshot 02:08 UTC; restore drill passed</td></tr>
+    <tr><td>Central logs</td><td>CloudWatch Logs for every tier; ALB logs in S3</td><td>Request-ID tracing across web and API</td></tr>
+    <tr><td>Historical metrics</td><td>CloudWatch dashboard and alarms</td><td>Alarm caught the failover test's 5xx</td></tr>
+    <tr><td>CDN by location</td><td>CloudFront edge caching for static assets</td><td><code>Hit</code> with rising <code>Age</code>; dynamic never cached</td></tr>
+  </table>
+  <div class="foot"><span></span><span>3 / 9</span></div>
+</section>
+
+<section>
+  <h2>Security</h2>
+  <div class="cols">
+    <div>
+      <ul>
+        <li><b>One public entry.</b> The ALB is internal; only CloudFront's managed security group may reach it.</li>
+        <li><b>Inbound paths:</b> ALB → tasks :3000, API → DB :5432. Nothing else.</li>
+        <li><b>Database:</b> TLS required by the server; the API verifies the RDS CA and hostname; read-only app login.</li>
+        <li><b>Secrets:</b> Secrets Manager, injected by ECS; master password managed by RDS. None in Git, images or Terraform.</li>
+      </ul>
+    </div>
+    <div>
+      <ul>
+        <li><b>IAM:</b> one execution role per service; task roles with no permissions; web cannot read the DB secret.</li>
+        <li><b>CI:</b> plan (read-only), release and infra roles. Deploy credentials only on protected <code>main</code>.</li>
+        <li><b>Containers:</b> Alpine, non-root, read-only filesystem, pinned by digest, scanned on push (0 findings).</li>
+        <li><b>Encryption at rest:</b> RDS, S3, ECR.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="foot"><span></span><span>4 / 9</span></div>
+</section>
+
+<section>
+  <h2>Failure handling: measured</h2>
+  <div class="kpis">
+    <div class="kpi"><div class="big">0</div><div class="label">failed requests when a web or API task was killed</div></div>
+    <div class="kpi"><div class="big">45–68 s</div><div class="label">until ECS had a healthy replacement</div></div>
+    <div class="kpi"><div class="big">~17 s</div><div class="label">of fast 503s during a forced DB failover</div></div>
+    <div class="kpi"><div class="big">0</div><div class="label">container restarts during the DB outage</div></div>
+  </div>
+  <ul style="margin-top:28px">
+    <li>Sampler inside the VPC: <code>/</code> and <code>/api/status</code> every 500 ms during each test.</li>
+    <li>Requests are bounded (API 3 s, web 5 s) and fail fast with 503; the pool reconnects by itself.</li>
+    <li><b>Liveness ≠ readiness:</b> health checks never depend on the DB, so a DB outage doesn't cause a restart storm.</li>
+  </ul>
+  <div class="foot"><span>tests/system/resilience/run.sh</span><span>5 / 9</span></div>
+</section>
+
+<section>
+  <h2>Updates without downtime</h2>
+  <div class="cols">
+    <div>
+      <p><b>Application releases</b></p>
+      <ul>
+        <li>Rolling: minimum healthy 100%, maximum 200%.</li>
+        <li>New tasks healthy before old ones drain (15 s deregistration, ≤ 20 s graceful shutdown).</li>
+        <li>Circuit breaker + public smoke test + automatic rollback.</li>
+      </ul>
+      <p class="ok" style="margin-top:14px">Measured: 0 failed requests</p>
+    </div>
+    <div>
+      <p><b>Database engine update (16.14 → 16.15)</b></p>
+      <ul>
+        <li>Restore <b>green</b> from serving <b>blue</b>; upgrade green while blue serves.</li>
+        <li>Verify green as the app user over TLS.</li>
+        <li>Configuration release moves the API to green; blue stays for rollback.</li>
+        <li>Safe because the application is read-only.</li>
+      </ul>
+      <p class="ok" style="margin-top:14px">Measured: 0 failed of 3,598 requests, rollback tested</p>
+    </div>
+  </div>
+  <div class="foot"><span>scripts/release/deploy.sh</span><span>6 / 9</span></div>
+</section>
+
+<section>
+  <h2>Continuous delivery</h2>
+  <svg viewBox="0 0 1180 150" width="100%" height="1.6in">
+    <defs><marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#5b6475"/></marker></defs>
+    <g font-size="15" text-anchor="middle">
+      <rect x="10" y="40" width="190" height="70" rx="8" fill="#eef3fb" stroke="#1f6feb"/><text x="105" y="70">test</text><text x="105" y="92" font-size="12">API + web unit tests</text>
+      <rect x="240" y="40" width="190" height="70" rx="8" fill="#eef3fb" stroke="#1f6feb"/><text x="335" y="70">plan</text><text x="335" y="92" font-size="12">terraform plan (read-only)</text>
+      <rect x="470" y="40" width="190" height="70" rx="8" fill="#eef3fb" stroke="#1f6feb"/><text x="565" y="70">build</text><text x="565" y="92" font-size="12">images tagged by commit</text>
+      <rect x="700" y="40" width="210" height="70" rx="8" fill="#eef3fb" stroke="#1f6feb"/><text x="805" y="70">release</text><text x="805" y="92" font-size="12">API → web, smoke, rollback</text>
+      <rect x="950" y="40" width="210" height="70" rx="8" fill="#fff" stroke="#5b6475" stroke-dasharray="5 4"/><text x="1055" y="70">infra</text><text x="1055" y="92" font-size="12">apply (manual)</text>
+    </g>
+    <g stroke="#5b6475"><line x1="200" y1="75" x2="238" y2="75" marker-end="url(#b)"/><line x1="430" y1="75" x2="468" y2="75" marker-end="url(#b)"/><line x1="660" y1="75" x2="698" y2="75" marker-end="url(#b)"/><line x1="910" y1="75" x2="948" y2="75" marker-end="url(#b)"/></g>
+  </svg>
+  <ul>
+    <li><b>Every branch:</b> tests, a check that CI is read-only, Terraform plan. <b>Main:</b> build and one serialized release job.</li>
+    <li>The release waits for <i>all</i> checks; only one release runs at a time; image digests come from ECR by the commit tag.</li>
+    <li>CI runs in a separate GitLab project on an owned runner; the code repository itself needs no runners.</li>
+    <li>AWS access through scoped roles. OIDC is configured, but this GitLab issues no ID tokens, so CI users can only assume those roles.</li>
+  </ul>
+  <div class="foot"><span>.gitlab-ci.yml</span><span>7 / 9</span></div>
+</section>
+
+<section>
+  <h2>Operations, backups and observability</h2>
+  <div class="cols">
+    <div>
+      <p><b>Runtime scripts</b> <code>scripts/runtime/</code></p>
+      <ul><li><code>status.sh</code>, <code>probe.sh</code> (in-VPC check)</li><li><code>scale.sh web 3</code>, <code>start.sh</code>, <code>stop.sh --confirm-outage</code></li><li><code>teardown.sh --confirm-destroy</code></li></ul>
+      <p style="margin-top:16px"><b>Backups</b> <code>scripts/backup/</code></p>
+      <ul><li>RDS daily, 7 days, point-in-time recovery</li><li>State bucket: versioned + AWS Backup daily</li><li><code>backup-now.sh</code>, <code>restore-drill.sh</code> (20 min, verified)</li></ul>
+    </div>
+    <div>
+      <p><b>Logs</b></p>
+      <ul><li>JSON request logs with request ID (= UUID on the page)</li><li>RDS logs, ALB logs in S3, CloudFront logs</li></ul>
+      <p style="margin-top:16px"><b>Metrics</b></p>
+      <ul><li>Dashboard: CloudFront, ALB latency/5xx, healthy targets, ECS CPU/memory, RDS</li><li>Alarms: targets &lt; 2, 5xx, CDN error rate, DB CPU</li></ul>
+    </div>
+  </div>
+  <div class="foot"><span></span><span>8 / 9</span></div>
+</section>
+
+<section>
+  <h2>Trade-offs and next steps</h2>
+  <table>
+    <tr><th>Choice made</th><th>Why</th><th>Next step with more time</th></tr>
+    <tr><td>Tasks in public subnets, outbound only</td><td>No NAT gateway cost; inbound closed by security groups</td><td>Private subnets + VPC endpoints</td></tr>
+    <tr><td>~17 s DB failover window</td><td>Managed Multi-AZ, fast-failing requests</td><td>RDS Proxy or Aurora</td></tr>
+    <tr><td>Fixed 2 + 2 tasks, scripted scaling</td><td>Predictable cost for this project</td><td>ECS Service Auto Scaling</td></tr>
+    <tr><td>Default CloudFront certificate</td><td>No custom domain required</td><td>Domain + ACM certificate + WAF</td></tr>
+    <tr><td>CI users instead of OIDC</td><td>Git host issues no ID tokens</td><td>OIDC once supported</td></tr>
+  </table>
+  <p style="margin-top:22px" class="sub">Not simulated: a full Availability Zone outage; a fresh-account bootstrap end to end.</p>
+  <div class="foot"><span></span><span>9 / 9</span></div>
+</section>
+
+</body>
+</html>
