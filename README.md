@@ -39,7 +39,7 @@ More detail, including failure and update behaviour: [docs/architecture.md](docs
 | `web/`, `api/` | The application, with tests and a Dockerfile per service |
 | `infra/bootstrap/` | Terraform for the encrypted, versioned S3 state bucket (native state locking) |
 | `infra/stack/` | Terraform for everything else: network, IAM, ECR, RDS, ECS, ALB, CloudFront, monitoring |
-| `.gitlab-ci.yml` | Pipeline: tests and plan on every branch; build and rolling release on `main` |
+| `.github/workflows/ci.yml` | Pipeline: tests and plan on every branch; build and rolling release on `main` |
 | `scripts/release/` | Image build/push and the verified rolling release with rollback |
 | `scripts/runtime/` | Operations: status, private probe, scale, start, stop, database initialization, teardown |
 | `scripts/backup/` | Backup status, on-demand backup, database verification and an isolated restore drill |
@@ -102,7 +102,7 @@ After the first deployment, releases go through the pipeline.
 | release | API, then web: new task definition revision with only the image changed, rolling update (new tasks healthy before old ones drain), ECS circuit breaker, public smoke test, rollback on failure | `main` |
 | infra | apply the reviewed plan | `main`, manual |
 
-CI uses scoped roles: plan (read-only), release (images and ECS services only), infra (project-scoped). The GitLab instance issues no OIDC ID tokens, so jobs reach these roles through CI users that may only assume them; their keys are masked variables, and the deploy keys are protected (available on `main` only). The OIDC trust is in place for servers that do issue ID tokens.
+CI uses scoped roles: plan (read-only), release (images and ECS services only), infra (project-scoped). GitHub Actions jobs reach these roles through OIDC: each job requests an ID token and assumes its role with short-lived credentials, so no AWS keys are stored in GitHub. Trust is pinned to this repository; the release and infra roles can be assumed only from `main`.
 
 ## Operations
 

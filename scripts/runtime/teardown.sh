@@ -24,13 +24,6 @@ if aws rds describe-db-instances --db-instance-identifier three-tier-restore-dri
   log "restore-drill database deletion requested"
 fi
 
-for user in $(terraform -chdir="$stack" output -json ci_user_names | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(Object.values(JSON.parse(s)).join(" ")))'); do
-  for key in $(aws iam list-access-keys --user-name "$user" --query 'AccessKeyMetadata[].AccessKeyId' --output text); do
-    aws iam delete-access-key --user-name "$user" --access-key-id "$key"
-    log "deleted access key ${key:0:4}…${key: -4} of $user"
-  done
-done
-
 vault="$(terraform -chdir="$stack" output -raw backup_vault 2>/dev/null || true)"
 if [ -n "$vault" ]; then
   for rp in $(aws backup list-recovery-points-by-backup-vault --backup-vault-name "$vault" --query 'RecoveryPoints[].RecoveryPointArn' --output text); do

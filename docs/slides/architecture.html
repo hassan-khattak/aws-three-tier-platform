@@ -112,7 +112,7 @@
     <tr><td>Everything as code</td><td>Terraform with S3 state and locking</td><td>Repeat plans clean, in CI too</td></tr>
     <tr><td>Instance failures</td><td>2 tasks/service across 2 AZs; RDS Multi-AZ</td><td>Task loss: 0 failures; DB failover ~17 s</td></tr>
     <tr><td>Updates without downtime</td><td>Rolling releases; parallel-generation DB upgrade</td><td>Releases and DB upgrade: 0 failures</td></tr>
-    <tr><td>Automated deployment + tests</td><td>GitLab CI: tests → plan → build → release</td><td>53 unit tests gate the release</td></tr>
+    <tr><td>Automated deployment + tests</td><td>GitHub Actions: tests → plan → build → release</td><td>53 unit tests gate the release</td></tr>
     <tr><td>Daily backups</td><td>RDS automated + PITR; AWS Backup for state</td><td>Scheduled snapshot 02:08 UTC; restore drill passed</td></tr>
     <tr><td>Central logs</td><td>CloudWatch Logs for every tier; ALB logs in S3</td><td>Request-ID tracing across web and API</td></tr>
     <tr><td>Historical metrics</td><td>CloudWatch dashboard and alarms</td><td>Alarm caught the failover test's 5xx</td></tr>
@@ -202,10 +202,10 @@
   <ul>
     <li><b>Every branch:</b> tests, a check that CI is read-only, Terraform plan. <b>Main:</b> build and one serialized release job.</li>
     <li>The release waits for <i>all</i> checks; only one release runs at a time; image digests come from ECR by the commit tag.</li>
-    <li>CI runs in a separate GitLab project on an owned runner; the code repository itself needs no runners.</li>
-    <li>AWS access through scoped roles. OIDC is configured, but this GitLab issues no ID tokens, so CI users can only assume those roles.</li>
+    <li>CI runs on GitHub Actions hosted runners in the same repository as the code.</li>
+    <li>AWS access through scoped roles assumed with GitHub OIDC tokens; no AWS keys are stored in CI.</li>
   </ul>
-  <div class="foot"><span>.gitlab-ci.yml</span><span>7 / 9</span></div>
+  <div class="foot"><span>.github/workflows/ci.yml</span><span>7 / 9</span></div>
 </section>
 
 <section>

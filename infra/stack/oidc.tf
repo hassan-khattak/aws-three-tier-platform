@@ -1,53 +1,43 @@
-# GitLab CI obtains short-lived AWS credentials through OIDC; there are no
-# long-lived CI keys. Tokens are requested in .gitlab-ci.yml with
-#   id_tokens: { AWS_ID_TOKEN: { aud: sts.amazonaws.com } }
-# and trust is pinned to one project and, where it matters, one branch via
-# the token's sub claim: project_path:<path>:ref_type:branch:ref:<branch>.
-resource "aws_iam_openid_connect_provider" "gitlab" {
-  url            = "https://${var.gitlab_host}"
-  client_id_list = local.oidc_audiences
-}
-
+# GitHub Actions obtains short-lived AWS credentials through OIDC; there are no
+# long-lived CI keys. Jobs request a token with `permissions: id-token: write`
+# in .github/workflows/ci.yml, and trust is pinned to one repository and, where
+# it matters, one branch via the token's sub claim:
+#   repo:<owner>/<repo>:ref:refs/heads/<branch>
+#   repo:<owner>/<repo>:pull_request            (pull request runs)
 locals {
-  # id_tokens use sts.amazonaws.com; servers without id_tokens issue
-  # CI_JOB_JWT_V2 with the GitLab URL as audience. The sub check is the same.
-  oidc_audiences = ["sts.amazonaws.com", "https://${var.gitlab_host}"]
-  oidc_sub       = "project_path:${var.gitlab_project_path}:ref_type:branch:ref"
-  state_bucket   = "${var.project}-tfstate-${data.aws_caller_identity.current.account_id}-${var.region}"
+  github_oidc_host = "token.actions.githubusercontent.com"
+  oidc_sub         = "repo:${var.github_repository}"
+  state_bucket     = "${var.project}-tfstate-${data.aws_caller_identity.current.account_id}-${var.region}"
   # Which token subjects may assume each role.
   ci_role_subjects = {
-    plan    = ["${local.oidc_sub}:*"]
-    release = ["${local.oidc_sub}:${var.gitlab_release_branch}"]
-    infra   = ["${local.oidc_sub}:${var.gitlab_release_branch}"]
+    plan    = ["${local.oidc_sub}:ref:refs/heads/*", "${local.oidc_sub}:pull_request"]
+    release = ["${local.oidc_sub}:ref:refs/heads/${var.github_release_branch}"]
+    infra   = ["${local.oidc_sub}:ref:refs/heads/${var.github_release_branch}"]
   }
+}
+
+resource "aws_iam_openid_connect_provider" "github" {
+  url            = "https://${local.github_oidc_host}"
+  client_id_list = ["sts.amazonaws.com"]
 }
 
 data "aws_iam_policy_document" "ci_trust" {
   for_each = local.ci_role_subjects
 
-  # Fallback for GitLab servers without ID tokens: the matching CI user.
-  statement {
-    actions = ["sts:AssumeRole"]
-    principals {
-      type        = "AWS"
-      identifiers = [for user in local.ci_role_users[each.key] : aws_iam_user.ci[user].arn]
-    }
-  }
-
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
     principals {
       type        = "Federated"
-      identifiers = [aws_iam_openid_connect_provider.gitlab.arn]
+      identifiers = [aws_iam_openid_connect_provider.github.arn]
     }
     condition {
       test     = "StringEquals"
-      variable = "${var.gitlab_host}:aud"
-      values   = local.oidc_audiences
+      variable = "${local.github_oidc_host}:aud"
+      values   = ["sts.amazonaws.com"]
     }
     condition {
       test     = "StringLike"
-      variable = "${var.gitlab_host}:sub"
+      variable = "${local.github_oidc_host}:sub"
       values   = each.value
     }
   }
@@ -165,7 +155,7 @@ data "aws_iam_policy_document" "ci_infra" {
     resources = [
       "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project}-*",
       "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/${var.project}-*",
-      aws_iam_openid_connect_provider.gitlab.arn,
+      aws_iam_openid_connect_provider.github.arn,
     ]
   }
   statement {

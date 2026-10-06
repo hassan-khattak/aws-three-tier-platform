@@ -39,6 +39,8 @@ Plan 13 to add; applied; repeat plan: no changes.
 | GitLab OIDC | see below |
 | Budget | skipped by decision (USD 100 credits; no alarm for now) |
 
+> **Note:** CI later moved from GitLab to GitHub Actions. The two sections below record the original GitLab verification as it happened; the repository now uses GitHub OIDC (`infra/stack/oidc.tf`) and the CI user fallback was removed.
+
 ## GitLab CI identities — 2026-10-01
 
 CI runs in the submission repository `gitlab.example.com/example-org/submission-repo` (default branch `main`).

@@ -60,7 +60,7 @@ output "db_app_secret_arn" {
 }
 
 output "ci_role_arns" {
-  description = "Roles for GitLab CI jobs: plan (any branch), release and infra (release branch only)."
+  description = "Roles for GitHub Actions jobs: plan (any branch), release and infra (release branch only)."
   value       = { for k, r in aws_iam_role.ci : k => r.arn }
 }
 
@@ -89,11 +89,6 @@ output "log_groups" {
 
 output "operator_task_definition" {
   value = try(aws_ecs_task_definition.operator[0].arn, null)
-}
-
-output "ci_user_names" {
-  description = "IAM users whose console-created access keys go into GitLab CI/CD variables."
-  value       = { for k, u in aws_iam_user.ci : k => u.name }
 }
 
 output "alb_arn" {

@@ -32,7 +32,7 @@ Deliver the supplied web → API → PostgreSQL application as a continuously de
 - **Time:** seven days from receipt, so scope stays at what the requirements justify. No UI work, no extra environments, no new data features.
 - **Cost:** a short-lived deployment. Target under USD 50 for seven days; estimated at about USD 3.50 per day.
 - **Application:** read-only. It runs `SELECT now()` and nothing else. This makes a parallel-database upgrade safe, and the plan depends on it.
-- **CI host:** The hosting GitLab has no shared runners, so CI runs in a separate GitLab project with its own runner.
+- **CI host:** CI runs on GitHub Actions hosted runners in the same repository as the code.
 
 ## 4. Architecture decisions
 
@@ -47,7 +47,7 @@ Deliver the supplied web → API → PostgreSQL application as a continuously de
 | Secrets | Secrets Manager; RDS-managed master; read-only app login | Environment files, SSM parameters | No secrets in Git, images or Terraform inputs |
 | Releases | Rolling, healthy-before-drain, circuit breaker, public smoke test, automatic rollback | Blue/green with CodeDeploy | Built into ECS; enough for a stateless service |
 | DB engine update | Restore a new generation, upgrade it, roll the API across, retire the old one | In-place upgrade; RDS Blue/Green | An in-place upgrade restarts the DB; Blue/Green still has a switchover interruption; the read-only app allows two generations to coexist |
-| CI | GitLab CI on an owned runner; scoped IAM roles | GitHub Actions, CodePipeline | Matches the GitLab ecosystem used for source hosting. OIDC was prepared, but this GitLab instance issues no ID tokens, so CI users that can only assume scoped roles are used instead |
+| CI | GitHub Actions with OIDC to scoped IAM roles | GitLab CI, CodePipeline | Source and CI live in one place, hosted runners need no setup, and GitHub issues OIDC ID tokens, so no long-lived AWS keys are needed |
 | Observability | CloudWatch Logs, metrics, dashboard and alarms; ALB logs in S3; CloudFront logs | Prometheus/Grafana, ELK | Native, no extra servers; enough to find bottlenecks |
 
 ## 5. Delivery phases
@@ -80,7 +80,7 @@ Each phase ended with its checks run and the results recorded before the next be
 | DB failover interrupts requests | Requests are bounded to 3 s (API) and 5 s (web) and fail fast with 503; the pool reconnects; liveness never depends on the DB. Measured: about 17 s of 503s, then automatic recovery |
 | A bad release takes the site down | Healthy-before-drain rollout, ECS circuit breaker, public smoke test, automatic rollback |
 | Engine upgrade downtime | Parallel database generation; the API is moved by a rolling configuration release. Measured: 0 failed requests |
-| CI runner availability and network | Retries for infrastructure failures, no dependence on job artifacts, all checks gate the release |
+| CI availability and network | Retries for transient failures (provider download), no dependence on job artifacts, all checks gate the release |
 | Credential exposure | Least-privilege roles; keys restricted to role assumption; protected variables for deploy keys; rotation before submission |
 | Cost overrun | Small task and DB sizes, no NAT gateway; teardown script after the interview |
 

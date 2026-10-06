@@ -33,20 +33,14 @@ variable "image_retention_count" {
   default     = 20
 }
 
-variable "gitlab_host" {
-  description = "GitLab instance that runs CI (OIDC issuer host)."
+variable "github_repository" {
+  description = "Only this repository's workflows may assume the CI roles (owner/name)."
   type        = string
-  default     = "gitlab.example.com"
+  default     = "hassan-khattak/aws-three-tier-platform"
 }
 
-variable "gitlab_project_path" {
-  description = "Only this project's CI jobs may assume the CI roles (the working project, not the submission repository)."
-  type        = string
-  default     = "example-user/three-tier"
-}
-
-variable "gitlab_release_branch" {
-  description = "Protected branch whose pipelines may release and apply infrastructure."
+variable "github_release_branch" {
+  description = "Branch whose workflow runs may release and apply infrastructure."
   type        = string
   default     = "main"
 }

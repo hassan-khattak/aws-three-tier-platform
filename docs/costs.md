@@ -1,6 +1,6 @@
 # Deployment cost estimate
 
-Expected AWS usage cost for the first seven deployed days in `us-east-1`, before credits and tax. Paid GitLab usage is excluded. Target: USD 50.
+Expected AWS usage cost for the first seven deployed days in `us-east-1`, before credits and tax. Paid GitHub Actions usage is excluded. Target: USD 50.
 
 Unit prices come from the AWS Price List API (`aws pricing get-products --region us-east-1`), retrieved 2026-09-30. The CloudWatch dashboard price ($3.00 per dashboard-month) is the published rate and was not returned by the API. All arithmetic is in [scripts/cost/estimate.py](../scripts/cost/estimate.py); rerun it after changing a quantity.
 
@@ -62,4 +62,4 @@ Keeping the deployment running costs about USD 3.46 per extra day at steady stat
 
 ## Not included
 
-Credits (none recorded yet), tax, GitLab compute beyond its free allowance, traffic far above the assumptions, and any extra environment.
+Credits (none recorded yet), tax, GitHub Actions minutes beyond the free allowance, traffic far above the assumptions, and any extra environment.

@@ -1,0 +1,254 @@
+# Continuous delivery for the three-tier application.
+#
+#   test     unit tests for both services; CI-to-AWS login check   (pull requests and main)
+#   plan     terraform plan with the read-only plan role           (pull requests and main)
+#   build    linux/amd64 images pushed to ECR, tagged by commit    (main)
+#   release  one serialized job: API then web, verified, auto-rollback (main)
+#   infra    apply the reviewed plan                                (main, manual)
+#
+# AWS access: GitHub issues OIDC ID tokens, so jobs assume scoped roles with
+# short-lived credentials and there are no stored AWS keys. Trust is pinned to
+# this repository and, for release and infra, to the main branch (see
+# infra/stack/oidc.tf).
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      apply_infra:
+        description: Apply the reviewed Terraform plan (main only)
+        type: boolean
+        default: false
+
+# A new run on the same ref supersedes the previous one, except on main where
+# releases must finish.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: "123456789012"
+  REGISTRY: 123456789012.dkr.ecr.us-east-1.amazonaws.com
+  CLUSTER: three-tier
+  PUBLIC_URL: https://dxxxxxxxxxxxxx.cloudfront.net
+  TF_STATE_BUCKET: three-tier-tfstate-123456789012-us-east-1
+  TERRAFORM_VERSION: 1.16.4
+
+jobs:
+  # -------------------------------------------------------------- test
+  test:
+    name: test:${{ matrix.service }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [api, web]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: ${{ matrix.service }}/package-lock.json
+      # The TLS tests generate throwaway certificates with the openssl CLI.
+      - run: openssl version
+      - run: node --version && npm --version
+      - working-directory: ${{ matrix.service }}
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm ls --omit=dev --all >/dev/null
+          npm test
+
+  aws-identity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/three-tier-ci-plan
+          role-session-name: github-${{ github.run_id }}-${{ github.run_attempt }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Verify the plan role is read-only
+        run: |
+          echo "repo=${GITHUB_REPOSITORY} ref=${GITHUB_REF_NAME}"
+          aws sts get-caller-identity --query Arn --output text
+          # A dry run always exits non-zero, so capture the output before
+          # inspecting it. Expected code: UnauthorizedOperation.
+          result=$(aws ec2 create-vpc --cidr-block 10.99.0.0/16 --dry-run 2>&1 || true)
+          code=$(printf '%s' "$result" | sed -n 's/.*An error occurred (\([A-Za-z]*\)).*/\1/p' | head -1)
+          echo "create-vpc dry run -> ${code:-no error code}"
+          test "$code" = UnauthorizedOperation && echo "write refused as expected"
+
+  # -------------------------------------------------------------- plan
+  plan:
+    name: terraform:plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: infra/stack
+    env:
+      TF_IN_AUTOMATION: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/three-tier-ci-plan
+          role-session-name: github-${{ github.run_id }}-${{ github.run_attempt }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: actions/cache@v4
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: terraform-plugins-${{ hashFiles('infra/stack/.terraform.lock.hcl') }}
+      - name: terraform init
+        run: |
+          export TF_PLUGIN_CACHE_DIR="$HOME/.terraform.d/plugin-cache"
+          mkdir -p "$TF_PLUGIN_CACHE_DIR"
+          # The provider download is large; retry transient network failures.
+          for attempt in 1 2 3; do
+            terraform init -input=false \
+              -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="key=stack/terraform.tfstate" \
+              -backend-config="region=$AWS_REGION" -backend-config="encrypt=true" -backend-config="use_lockfile=true" && break
+            [ "$attempt" = 3 ] && exit 1
+            echo "terraform init failed (attempt $attempt); retrying in 15 s"; sleep 15
+          done
+      - run: terraform fmt -check -recursive ..
+      - run: terraform validate
+      # No plan artifact: plan files can contain sensitive values. The plan is
+      # in the job log.
+      - name: terraform plan
+        run: |
+          rc=0; terraform plan -input=false -lock-timeout=120s -detailed-exitcode -out=stack.tfplan || rc=$?
+          echo "plan exit=$rc (0 = no changes, 2 = changes to review)"
+          test "$rc" != 1
+
+  # -------------------------------------------------------------- build
+  build:
+    name: build:${{ matrix.service }}
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [api, web]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/three-tier-ci-release
+          role-session-name: github-${{ github.run_id }}-${{ github.run_attempt }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to ECR
+        run: aws ecr get-login-password | docker login --username AWS --password-stdin "$REGISTRY"
+      - name: Build and push
+        env:
+          SERVICE: ${{ matrix.service }}
+        run: |
+          repository="$REGISTRY/three-tier/$SERVICE"
+          tag="${GITHUB_SHA::8}"
+          if aws ecr describe-images --repository-name "three-tier/$SERVICE" --image-ids imageTag="$tag" >/dev/null 2>&1; then
+            echo "$tag already pushed (tags are immutable); reusing it"
+          else
+            docker buildx build --platform linux/amd64 --provenance=false --push -t "$repository:$tag" "$SERVICE"
+          fi
+          digest=$(aws ecr describe-images --repository-name "three-tier/$SERVICE" --image-ids imageTag="$tag" --query 'imageDetails[0].imageDigest' --output text)
+          echo "pushed $repository@$digest"
+
+  # -------------------------------------------------------------- release
+  # One job releases API then web (web readiness depends on the API), under a
+  # single production lock, so releases of different runs never interleave.
+  # It runs only after every check: both unit-test jobs, the CI login check, a
+  # successful terraform plan, and both image builds.
+  release:
+    name: release:production
+    needs: [test, aws-identity, plan, build]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    concurrency:
+      group: production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/three-tier-ci-release
+          role-session-name: github-${{ github.run_id }}-${{ github.run_attempt }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Roll out API, then web
+        run: |
+          echo "releasing commit $GITHUB_SHA"
+          tag="${GITHUB_SHA::8}"
+          # Digests come from ECR by the commit tag (immutable), not from artifacts.
+          for service in api web; do
+            digest=$(aws ecr describe-images --repository-name "three-tier/$service" --image-ids imageTag="$tag" --query 'imageDetails[0].imageDigest' --output text)
+            bash scripts/release/deploy.sh "$service" "$REGISTRY/three-tier/$service@$digest"
+          done
+
+  # -------------------------------------------------------------- infra
+  # Manual: run the workflow on main with apply_infra enabled. The plan it
+  # prints is the plan it applies.
+  infra:
+    name: infra:apply
+    needs: plan
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.apply_infra
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    concurrency:
+      group: production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: infra/stack
+    env:
+      TF_IN_AUTOMATION: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/three-tier-ci-infra
+          role-session-name: github-${{ github.run_id }}-${{ github.run_attempt }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: terraform init
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="key=stack/terraform.tfstate" \
+            -backend-config="region=$AWS_REGION" -backend-config="encrypt=true" -backend-config="use_lockfile=true"
+      - run: terraform plan -input=false -lock-timeout=120s -out=stack.tfplan
+      - run: terraform apply -input=false -lock-timeout=120s stack.tfplan
