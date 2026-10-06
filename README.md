@@ -104,6 +104,8 @@ After the first deployment, releases go through the pipeline.
 
 CI uses scoped roles: plan (read-only), release (images and ECS services only), infra (project-scoped). GitHub Actions jobs reach these roles through OIDC: each job requests an ID token and assumes its role with short-lived credentials, so no AWS keys are stored in GitHub. Trust is pinned to this repository; the release and infra roles can be assumed only from `main`.
 
+The stack is torn down, so the AWS-facing jobs (identity check, plan, build, release, apply) run only when the repository variable `AWS_ENABLED` is `true`; otherwise they are skipped. Unit tests and Terraform `fmt`/`validate` always run and need no AWS account.
+
 ## Operations
 
 ```bash

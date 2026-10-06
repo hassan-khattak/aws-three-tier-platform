@@ -6,6 +6,12 @@
 #   release  one serialized job: API then web, verified, auto-rollback (main)
 #   infra    apply the reviewed plan                                (main, manual)
 #
+# The stack is torn down after the demo, so the jobs that touch AWS run only
+# when the repository variable AWS_ENABLED is "true" (Settings > Secrets and
+# variables > Actions > Variables). Without it they are skipped, and the
+# pipeline still runs the unit tests and Terraform fmt/validate, which need no
+# AWS account.
+#
 # AWS access: GitHub issues OIDC ID tokens, so jobs assume scoped roles with
 # short-lived credentials and there are no stored AWS keys. Trust is pinned to
 # this repository and, for release and infra, to the main branch (see
@@ -70,6 +76,7 @@ jobs:
 
   aws-identity:
     runs-on: ubuntu-24.04
+    if: vars.AWS_ENABLED == 'true'
     timeout-minutes: 30
     permissions:
       contents: read
@@ -93,8 +100,28 @@ jobs:
           test "$code" = UnauthorizedOperation && echo "write refused as expected"
 
   # -------------------------------------------------------------- plan
+  # Needs no AWS: formats and validates the Terraform without a backend.
+  terraform-validate:
+    name: terraform:validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: infra/stack
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+      - run: terraform fmt -check -recursive ..
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate
+
   plan:
     name: terraform:plan
+    needs: terraform-validate
+    if: vars.AWS_ENABLED == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -132,8 +159,6 @@ jobs:
             [ "$attempt" = 3 ] && exit 1
             echo "terraform init failed (attempt $attempt); retrying in 15 s"; sleep 15
           done
-      - run: terraform fmt -check -recursive ..
-      - run: terraform validate
       # No plan artifact: plan files can contain sensitive values. The plan is
       # in the job log.
       - name: terraform plan
@@ -146,7 +171,7 @@ jobs:
   build:
     name: build:${{ matrix.service }}
     needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: vars.AWS_ENABLED == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -188,7 +213,7 @@ jobs:
   release:
     name: release:production
     needs: [test, aws-identity, plan, build]
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: vars.AWS_ENABLED == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     concurrency:
@@ -220,7 +245,7 @@ jobs:
   infra:
     name: infra:apply
     needs: plan
-    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.apply_infra
+    if: vars.AWS_ENABLED == 'true' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.apply_infra
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     concurrency:
